@@ -1,0 +1,45 @@
+# Build directories
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+
+# Visual Studio files
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.user
+*.suo
+*.metadata
+*.log
+.vs/
+
+# Node/Angular dependency and build directories
+node_modules/
+dist/
+.angular/
+.sass-cache/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln.docstates
+
+# Operating System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Environment configurations containing secrets
+.env
+.env*.local
+*.secret

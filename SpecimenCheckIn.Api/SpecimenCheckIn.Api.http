@@ -1,0 +1,6 @@
+@SpecimenCheckIn.Api_HostAddress = http://localhost:5096
+
+GET {{SpecimenCheckIn.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

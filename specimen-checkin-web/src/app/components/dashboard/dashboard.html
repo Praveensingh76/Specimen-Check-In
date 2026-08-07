@@ -1,0 +1,132 @@
+<div class="container fade-in">
+  <!-- Top Bar / Header with Tenant Selector -->
+  <header class="glass-card header-bar">
+    <div class="header-info">
+      <div class="logo-area">
+        <span class="logo-icon">🔬</span>
+        <div>
+          <h1>Specimen Check-In</h1>
+          <p class="subtitle">Multi-Tenant Laboratory Management System</p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="tenant-selector-container">
+      <label for="tenantSelect">Active Clinic / Tenant</label>
+      <select id="tenantSelect" [value]="tenantService.activeTenantId()" (change)="onTenantChange($event)">
+        @for (tenant of tenantService.tenants(); track tenant.id) {
+          <option [value]="tenant.id">{{ tenant.name }} ({{ tenant.code }})</option>
+        }
+      </select>
+    </div>
+  </header>
+
+  <!-- Dashboard Stats Grid -->
+  <div class="stats-grid">
+    <div class="glass-card stat-card border-indigo">
+      <div class="stat-icon bg-indigo">📋</div>
+      <div class="stat-details">
+        <span class="stat-label">Total Shipments</span>
+        <h2 class="stat-value">{{ totalManifestsCount() }}</h2>
+      </div>
+    </div>
+
+    <div class="glass-card stat-card border-warning">
+      <div class="stat-icon bg-warning">⏳</div>
+      <div class="stat-details">
+        <span class="stat-label">Specimens Pending Check-In</span>
+        <h2 class="stat-value text-warning">{{ pendingSpecimensCount() }}</h2>
+      </div>
+    </div>
+
+    <div class="glass-card stat-card border-success">
+      <div class="stat-icon bg-success">✅</div>
+      <div class="stat-details">
+        <span class="stat-label">Successfully Checked In</span>
+        <h2 class="stat-value text-success">{{ checkedInSpecimensCount() }}</h2>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manifest List Section -->
+  <div class="glass-card content-section">
+    <div class="section-header">
+      <div>
+        <h2>Specimen Manifests / Batches</h2>
+        <p class="section-desc">Manage received manifests and check in patient specimen containers.</p>
+      </div>
+      <a routerLink="/create-manifest" class="btn btn-primary">
+        <span>+ Create Manifest</span>
+      </a>
+    </div>
+
+    @if (isLoading()) {
+      <div class="state-container">
+        <div class="spinner"></div>
+        <p>Loading manifests...</p>
+      </div>
+    } @else if (errorMessage()) {
+      <div class="state-container error">
+        <span class="icon">⚠</span>
+        <p>{{ errorMessage() }}</p>
+        <button class="btn btn-secondary btn-sm" (click)="fetchManifests()">Retry Connection</button>
+      </div>
+    } @else if (manifests().length === 0) {
+      <div class="state-container empty">
+        <span class="icon">📦</span>
+        <p>No manifests found for this tenant.</p>
+        <p class="sub-text">Create a manifest to begin checking in specimens.</p>
+      </div>
+    } @else {
+      <div class="table-wrapper">
+        <table class="manifest-table">
+          <thead>
+            <tr>
+              <th>Manifest Code</th>
+              <th>Courier / Sender</th>
+              <th>Created Date</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (manifest of manifests(); track manifest.id) {
+              <tr>
+                <td class="font-mono text-indigo font-bold">
+                  {{ manifest.manifestNumber }}
+                </td>
+                <td>{{ manifest.senderName }}</td>
+                <td class="text-secondary">{{ manifest.createdAt | date:'MMM d, y, h:mm a' }}</td>
+                <td>
+                  @if (manifest.status === 'Completed') {
+                    <span class="badge badge-success">Completed</span>
+                  } @else if (manifest.status === 'Received') {
+                    <span class="badge badge-info">In Progress</span>
+                  } @else {
+                    <span class="badge badge-pending">New / Created</span>
+                  }
+                </td>
+                <td>
+                  <div class="progress-container">
+                    <div class="progress-bar">
+                      <div class="progress-fill" [style.width.%]="getProcessedPercentage(manifest)"></div>
+                    </div>
+                    <span class="progress-label">
+                      {{ getProcessedPercentage(manifest) }}% ({{ manifest.specimens?.length || 0 }} samples)
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <a [routerLink]="['/manifest', manifest.id]" class="btn btn-secondary btn-sm">
+                    Inspect & Check-In →
+                  </a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</div>

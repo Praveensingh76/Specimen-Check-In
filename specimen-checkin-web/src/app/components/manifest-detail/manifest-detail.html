@@ -1,0 +1,214 @@
+<div class="container fade-in">
+  <!-- Back navigation and header -->
+  <div class="header-section">
+    <a routerLink="/" class="back-link">← Back to Dashboard</a>
+    
+    @if (manifest(); as m) {
+      <div class="manifest-header-card glass-card">
+        <div class="manifest-info">
+          <span class="manifest-tag font-mono text-indigo">{{ m.manifestNumber }}</span>
+          <h2>Manifest Details & Check-In</h2>
+          <p class="courier-text">Courier: <strong>{{ m.senderName }}</strong> | Created: {{ m.createdAt | date:'MMM d, y, h:mm a' }}</p>
+        </div>
+        <div class="manifest-status-badge">
+          @if (m.status === 'Completed') {
+            <span class="badge badge-success">Completed</span>
+          } @else if (m.status === 'Received') {
+            <span class="badge badge-info">In Progress</span>
+          } @else {
+            <span class="badge badge-pending">New / Created</span>
+          }
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- Operator / Auditor Section -->
+  <div class="operator-bar glass-card">
+    <div class="form-group flex-row">
+      <label for="operatorNameInput">Operator Identity:</label>
+      <input 
+        type="text" 
+        id="operatorNameInput" 
+        [(ngModel)]="operatorName" 
+        placeholder="Operator name"
+        class="operator-input"
+      />
+    </div>
+  </div>
+
+  <!-- Messages Alert -->
+  @if (successMessage()) {
+    <div class="alert alert-success fade-in">
+      <span class="alert-icon">✓</span>
+      <span class="alert-message">{{ successMessage() }}</span>
+    </div>
+  }
+  @if (errorMessage()) {
+    <div class="alert alert-danger fade-in">
+      <span class="alert-icon">⚠</span>
+      <span class="alert-message">{{ errorMessage() }}</span>
+    </div>
+  }
+
+  <!-- Scanning / Filtering Tools -->
+  <div class="tools-grid">
+    <!-- Barcode Simulator Box -->
+    <div class="glass-card scanner-card">
+      <h3>📟 Barcode Scanner Simulator</h3>
+      <p class="helper-text">Type or paste a specimen barcode and press Enter to instantly Check-In.</p>
+      <div class="input-scanner-wrapper">
+        <input 
+          type="text" 
+          [(ngModel)]="barcodeSearchInput" 
+          (keyup.enter)="onBarcodeScan()"
+          placeholder="Scan or type barcode (e.g. SPC-987655) + Enter"
+          class="scanner-input"
+        />
+        <button class="btn btn-primary" (click)="onBarcodeScan()">Scan</button>
+      </div>
+    </div>
+
+    <!-- Search Filtering Box -->
+    <div class="glass-card search-card">
+      <h3>🔍 Search Specimens</h3>
+      <p class="helper-text">Search specimen table by Patient Name, Barcode, or Accession Number.</p>
+      <input 
+        type="text" 
+        [(ngModel)]="filterQuery" 
+        placeholder="Filter table content..."
+      />
+    </div>
+  </div>
+
+  <!-- Specimens Table -->
+  <div class="glass-card specimens-table-card">
+    <div class="section-title-bar">
+      <h3>Samples in this Manifest ({{ filteredSpecimens().length }} of {{ manifest()?.specimens?.length || 0 }})</h3>
+    </div>
+
+    @if (isLoading()) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading specimens...</p>
+      </div>
+    } @else if (filteredSpecimens().length === 0) {
+      <div class="empty-state">
+        <p>No specimens match the search filter.</p>
+      </div>
+    } @else {
+      <div class="table-wrapper">
+        <table class="specimens-table">
+          <thead>
+            <tr>
+              <th>Barcode</th>
+              <th>Patient Name</th>
+              <th>Accession ID</th>
+              <th>Collected At</th>
+              <th>Checked-In At</th>
+              <th>Operator / Notes</th>
+              <th>Status</th>
+              <th class="text-right">Check-In Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (s of filteredSpecimens(); track s.id) {
+              <tr [class.row-checked-in]="s.status === 'CheckedIn'" [class.row-rejected]="s.status === 'Rejected'">
+                <td class="font-mono text-bold">{{ s.specimenNumber }}</td>
+                <td>{{ s.patientName }}</td>
+                <td class="font-mono text-secondary">{{ s.accessionNumber }}</td>
+                <td class="text-secondary">{{ s.collectionDate | date:'MMM d, y, h:mm a' }}</td>
+                <td class="text-secondary">
+                  {{ s.receivedDate ? (s.receivedDate | date:'MMM d, y, h:mm a') : '—' }}
+                </td>
+                <td>
+                  @if (s.status === 'CheckedIn') {
+                    <span class="operator-tag">By: {{ s.checkedInBy || 'System' }}</span>
+                  } @else if (s.status === 'Rejected') {
+                    <span class="operator-tag">By: {{ s.checkedInBy || 'System' }}</span>
+                    <p class="rejection-reason-text">Reason: "{{ s.rejectionReason }}"</p>
+                  } @else {
+                    <span class="text-muted">—</span>
+                  }
+                </td>
+                <td>
+                  @if (s.status === 'CheckedIn') {
+                    <span class="badge badge-success">Checked In</span>
+                  } @else if (s.status === 'Rejected') {
+                    <span class="badge badge-danger">Rejected</span>
+                  } @else {
+                    <span class="badge badge-pending">Pending</span>
+                  }
+                </td>
+                <td class="text-right actions-cell">
+                  @if (s.status === 'Pending') {
+                    <button class="btn btn-success btn-xs" (click)="checkInSpecimen(s)">
+                      ✓ Check In
+                    </button>
+                    <button class="btn btn-danger btn-xs" (click)="openRejectionModal(s)">
+                      ✗ Reject
+                    </button>
+                  } @else {
+                    <span class="processed-checkmark">✓ Verified</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+
+  <!-- Rejection Modal Overlay -->
+  @if (activeRejectionSpecimen(); as activeSpecimen) {
+    <div class="modal-overlay fade-in">
+      <div class="modal-card glass-card">
+        <div class="modal-header">
+          <h3>Reject Specimen Container</h3>
+          <button class="btn-close" (click)="closeRejectionModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <p>You are rejecting specimen <strong>{{ activeSpecimen.specimenNumber }}</strong> for Patient <strong>{{ activeSpecimen.patientName }}</strong>.</p>
+          
+          <div class="form-group">
+            <label for="rejectReasonSelect">Select Rejection Reason</label>
+            <select id="rejectReasonSelect" [(ngModel)]="rejectionReason">
+              <option value="">-- Choose Reason --</option>
+              <option value="Leakage in container">Leakage / Spill in container</option>
+              <option value="Insufficient volume">Insufficient volume (QNS)</option>
+              <option value="Mismatched labels">Mismatched specimen/requisition label</option>
+              <option value="Incorrect container type">Incorrect container/additive type</option>
+              <option value="Clotted sample">Clotted sample (unacceptable type)</option>
+              <option value="Hemolyzed sample">Hemolyzed sample</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="customReason">Additional Details / Custom Reason</label>
+            <textarea 
+              id="customReason" 
+              rows="3" 
+              [(ngModel)]="rejectionReason" 
+              placeholder="Provide specific details about why the container is being rejected..."
+            ></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeRejectionModal()">Cancel</button>
+          <button 
+            class="btn btn-danger" 
+            [disabled]="!rejectionReason() || isRejecting()"
+            (click)="submitRejection()"
+          >
+            @if (isRejecting()) {
+              Rejecting...
+            } @else {
+              Confirm Rejection
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
