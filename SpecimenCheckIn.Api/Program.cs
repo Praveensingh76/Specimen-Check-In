@@ -90,7 +90,7 @@ using (var scope = app.Services.CreateScope())
     {
         try
         {
-            DbInitializer.Initialize(context);
+            DbInitializer.Initialize(context, app.Environment.IsDevelopment());
             logger.LogInformation("Database initialized and seeded successfully.");
             break;
         }

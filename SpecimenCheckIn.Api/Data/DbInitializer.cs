@@ -8,106 +8,170 @@ namespace SpecimenCheckIn.Api.Data
 {
     public static class DbInitializer
     {
-        public static void Initialize(ApplicationDbContext context)
+        public static void Initialize(ApplicationDbContext context, bool isDevelopment = false)
         {
-            // Apply migrations automatically if SQL Server is available
+            // Apply migrations automatically
             context.Database.Migrate();
 
-            // Seed Labs if none exist
-            if (context.Labs.Any())
+            // Only seed if in Development mode
+            if (!isDevelopment)
             {
-                return; // DB has been seeded
+                return;
             }
 
-            var lab1 = new Lab
+            // Idempotency check: skip if data already exists
+            if (context.Labs.Any())
             {
-                Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                Name = "Core Pathology Lab"
+                return;
+            }
+
+            // 1. Two Labs
+            var riversideLab = new Lab
+            {
+                Id = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                Name = "Riverside Clinic"
             };
 
-            var lab2 = new Lab
+            var northgateLab = new Lab
             {
-                Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                Name = "Regional Diagnostics Lab"
+                Id = Guid.Parse("44444444-4444-4444-4444-444444444444"),
+                Name = "Northgate Derm"
             };
 
-            context.Labs.AddRange(lab1, lab2);
+            context.Labs.AddRange(riversideLab, northgateLab);
             context.SaveChanges();
 
-            // Seed Manifests, Specimens, and Discrepancies
-            var manifest1 = new Manifest
+            // 2. Riverside Clinic Manifests
+
+            // Manifest A (Fully Received, all specimens Received)
+            var manifestA = new Manifest
             {
                 Id = Guid.NewGuid(),
-                LabId = lab1.Id,
-                Code = "MNF-PATH-001",
+                LabId = riversideLab.Id,
+                Code = "MNF-RIVER-001",
+                Status = ManifestStatus.Closed,
+                SentAt = DateTime.UtcNow.AddDays(-2),
+                SourceClinic = "Riverside Main Clinic"
+            };
+
+            var patientsA = new[]
+            {
+                "Alice Vance", "Bob Henderson", "Charlie Miller", "Diana Ross", "Ethan Hunt", "Fiona Gallagher"
+            };
+            var sitesA = new[]
+            {
+                "Blood/Serum", "Urine", "Swab/Throat", "Blood/Plasma", "CSF", "Tissue/Biopsy"
+            };
+
+            for (int i = 0; i < patientsA.Length; i++)
+            {
+                var specimen = new Specimen
+                {
+                    Id = Guid.NewGuid(),
+                    ManifestId = manifestA.Id,
+                    Code = $"SP-2026-A00{41 + i}",
+                    Patient = patientsA[i],
+                    Site = sitesA[i],
+                    Provider = "Dr. Robert Carter",
+                    Status = SpecimenStatus.Received,
+                    ReceivedBy = "Tech Alice",
+                    ReceivedAt = DateTime.UtcNow.AddDays(-1)
+                };
+                manifestA.Specimens.Add(specimen);
+            }
+
+            // Manifest B (In-progress, mix of Received/Pending/Flagged to show all three states)
+            var manifestB = new Manifest
+            {
+                Id = Guid.NewGuid(),
+                LabId = riversideLab.Id,
+                Code = "MNF-RIVER-002",
                 Status = ManifestStatus.Open,
-                SentAt = DateTime.UtcNow.AddHours(-6),
-                SourceClinic = "Downtown Medical Center"
+                SentAt = DateTime.UtcNow.AddHours(-12),
+                SourceClinic = "Riverside East Wing"
             };
 
-            var specimen1 = new Specimen
+            var patientsB = new[]
             {
-                Id = Guid.NewGuid(),
-                ManifestId = manifest1.Id,
-                Code = "SPEC-A1",
-                Patient = "Alice Johnson",
-                Site = "Blood/Serum",
-                Provider = "Dr. Green",
-                Status = SpecimenStatus.Received,
-                ReceivedBy = "Tech Bob",
-                ReceivedAt = DateTime.UtcNow.AddHours(-1)
+                "George Costanza", "Harold Finch", "Irene Adler", "John Watson", "Kevin Bacon", "Laura Croft", "Michael Scott"
+            };
+            var sitesB = new[]
+            {
+                "Sputum", "Blood/Serum", "Stool", "Swab/Nasal", "Urine", "Blood/EDTA", "Tissue/Skin"
+            };
+            var statusesB = new[]
+            {
+                SpecimenStatus.Received, SpecimenStatus.Pending, SpecimenStatus.Received, 
+                SpecimenStatus.Pending, SpecimenStatus.Flagged, SpecimenStatus.Received, SpecimenStatus.Pending
             };
 
-            var specimen2 = new Specimen
+            for (int i = 0; i < patientsB.Length; i++)
+            {
+                var specimen = new Specimen
+                {
+                    Id = Guid.NewGuid(),
+                    ManifestId = manifestB.Id,
+                    Code = $"SP-2026-A00{51 + i}",
+                    Patient = patientsB[i],
+                    Site = sitesB[i],
+                    Provider = "Dr. Beverly Crusher",
+                    Status = statusesB[i],
+                    ReceivedBy = statusesB[i] != SpecimenStatus.Pending ? "Tech Alice" : null,
+                    ReceivedAt = statusesB[i] != SpecimenStatus.Pending ? DateTime.UtcNow.AddHours(-2) : null
+                };
+                manifestB.Specimens.Add(specimen);
+            }
+
+            // 3. Northgate Derm Manifest
+            // Manifest C (One manifest with a Missing discrepancy already raised)
+            var manifestC = new Manifest
             {
                 Id = Guid.NewGuid(),
-                ManifestId = manifest1.Id,
-                Code = "SPEC-A2",
-                Patient = "Charlie Brown",
-                Site = "Urine",
-                Provider = "Dr. Green",
-                Status = SpecimenStatus.Pending
+                LabId = northgateLab.Id,
+                Code = "MNF-NORTH-001",
+                Status = ManifestStatus.Open,
+                SentAt = DateTime.UtcNow.AddHours(-8),
+                SourceClinic = "Northgate Dermatology Center"
             };
 
-            var discrepancy1 = new Discrepancy
+            var patientsC = new[]
+            {
+                "Nancy Drew", "Oliver Queen", "Peter Parker", "Quentin Coldwater", "Rachel Green", "Steve Rogers"
+            };
+            var sitesC = new[]
+            {
+                "Skin Scraping", "Tissue/Nail", "Blood/Serum", "Swab/Wound", "Urine", "Tissue/Punch Biopsy"
+            };
+
+            for (int i = 0; i < patientsC.Length; i++)
+            {
+                var specimen = new Specimen
+                {
+                    Id = Guid.NewGuid(),
+                    ManifestId = manifestC.Id,
+                    Code = $"SP-2026-B00{11 + i}",
+                    Patient = patientsC[i],
+                    Site = sitesC[i],
+                    Provider = "Dr. Stephen Strange",
+                    Status = i == 2 ? SpecimenStatus.Flagged : SpecimenStatus.Pending // The 3rd specimen is missing/flagged
+                };
+                manifestC.Specimens.Add(specimen);
+            }
+
+            // Create a discrepancy for the 3rd specimen (Peter Parker) which is marked Missing
+            var missingSpecimen = manifestC.Specimens[2];
+            var discrepancy = new Discrepancy
             {
                 Id = Guid.NewGuid(),
-                ManifestId = manifest1.Id,
-                SpecimenId = specimen2.Id,
+                ManifestId = manifestC.Id,
+                SpecimenId = missingSpecimen.Id,
                 Type = DiscrepancyType.Missing,
                 Status = DiscrepancyStatus.Open,
-                Notes = "Specimen registered on manifest but not found in courier bag."
+                Notes = $"Specimen {missingSpecimen.Code} for patient {missingSpecimen.Patient} was not received in the physical shipment."
             };
+            manifestC.Discrepancies.Add(discrepancy);
 
-            manifest1.Specimens.AddRange(new[] { specimen1, specimen2 });
-            manifest1.Discrepancies.Add(discrepancy1);
-
-            var manifest2 = new Manifest
-            {
-                Id = Guid.NewGuid(),
-                LabId = lab2.Id,
-                Code = "MNF-PATH-002",
-                Status = ManifestStatus.Closed,
-                SentAt = DateTime.UtcNow.AddHours(-12),
-                SourceClinic = "Valley Pediatrics"
-            };
-
-            var specimen3 = new Specimen
-            {
-                Id = Guid.NewGuid(),
-                ManifestId = manifest2.Id,
-                Code = "SPEC-B1",
-                Patient = "David Miller",
-                Site = "Swab/Nasal",
-                Provider = "Dr. Davis",
-                Status = SpecimenStatus.Received,
-                ReceivedBy = "Tech Sarah",
-                ReceivedAt = DateTime.UtcNow.AddHours(-3)
-            };
-
-            manifest2.Specimens.Add(specimen3);
-
-            context.Manifests.AddRange(manifest1, manifest2);
+            context.Manifests.AddRange(manifestA, manifestB, manifestC);
             context.SaveChanges();
         }
     }
