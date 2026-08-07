@@ -16,7 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ITenantProvider, TenantProvider>();
+builder.Services.AddScoped<ICurrentLabContext, CurrentLabContext>();
 
 // Configure DbContext with SQL Server
 builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
@@ -45,13 +45,13 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo 
     { 
-        Title = "Specimen Check-In Multi-Tenant API", 
+        Title = "Pathology Lab Check-In Multi-Tenant API", 
         Version = "v1",
-        Description = "API for checking in and managing specimen shipments across different clinics/tenants."
+        Description = "API for checking in and managing specimen shipments across different pathology labs."
     });
     
-    // Add X-Tenant-ID header parameter to endpoints
-    c.OperationFilter<TenantHeaderOperationFilter>();
+    // Add X-Lab-Id header parameter to endpoints
+    c.OperationFilter<LabHeaderOperationFilter>();
 });
 
 var app = builder.Build();
@@ -71,7 +71,6 @@ app.UseSwaggerUI(c =>
 
 app.UseCors("AngularDevPolicy");
 
-// In production/deployment we'd use HTTPS redirection, but for simple local dev, we make it optional
 app.UseHttpsRedirection();
 
 app.UseAuthorization();
@@ -100,7 +99,6 @@ using (var scope = app.Services.CreateScope())
             if (i == retryCount - 1)
             {
                 logger.LogError(ex, "Failed to initialize and seed database after maximum retries.");
-                // We don't crash the application immediately, but log the critical error
             }
             else
             {
@@ -113,8 +111,8 @@ using (var scope = app.Services.CreateScope())
 
 app.Run();
 
-// Operation Filter to add X-Tenant-ID header to Swagger UI
-public class TenantHeaderOperationFilter : IOperationFilter
+// Operation Filter to add X-Lab-Id header to Swagger UI
+public class LabHeaderOperationFilter : IOperationFilter
 {
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {
@@ -123,14 +121,15 @@ public class TenantHeaderOperationFilter : IOperationFilter
             operation.Parameters = new List<OpenApiParameter>();
         }
 
-        // Check if the current controller is TenantsController; if so, do not add the header requirement
-        var isTenantController = context.MethodInfo.DeclaringType?.Name.Contains("Tenants") ?? false;
+        // Check if the current controller is LabsController or TenantsController; if so, do not add the header requirement
+        var controllerName = context.MethodInfo.DeclaringType?.Name ?? string.Empty;
+        var isLabController = controllerName.Contains("Labs") || controllerName.Contains("Tenants");
         
-        if (!isTenantController)
+        if (!isLabController)
         {
             operation.Parameters.Add(new OpenApiParameter
             {
-                Name = "X-Tenant-ID",
+                Name = "X-Lab-Id",
                 In = ParameterLocation.Header,
                 Required = false, // Allow running without header, although actions will validate
                 Schema = new OpenApiSchema
@@ -138,7 +137,7 @@ public class TenantHeaderOperationFilter : IOperationFilter
                     Type = "string",
                     Format = "uuid"
                 },
-                Description = "Guid of the active Tenant context. Must be a valid tenant ID registered in the DB."
+                Description = "Guid of the active Lab context. Must be a valid lab ID registered in the DB."
             });
         }
     }

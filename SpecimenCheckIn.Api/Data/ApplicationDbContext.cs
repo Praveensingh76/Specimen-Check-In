@@ -9,99 +9,138 @@ namespace SpecimenCheckIn.Api.Data
 {
     public class ApplicationDbContext : DbContext
     {
-        private readonly ITenantProvider? _tenantProvider;
+        private readonly ICurrentLabContext? _labContext;
 
         public ApplicationDbContext(
             DbContextOptions<ApplicationDbContext> options,
-            ITenantProvider? tenantProvider = null) : base(options)
+            ICurrentLabContext? labContext = null) : base(options)
         {
-            _tenantProvider = tenantProvider;
+            _labContext = labContext;
         }
 
-        public DbSet<Tenant> Tenants { get; set; } = null!;
+        public DbSet<Lab> Labs { get; set; } = null!;
         public DbSet<Manifest> Manifests { get; set; } = null!;
         public DbSet<Specimen> Specimens { get; set; } = null!;
+        public DbSet<Discrepancy> Discrepancies { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            // Configure Tenant
-            modelBuilder.Entity<Tenant>(entity =>
+            // Configure Lab
+            modelBuilder.Entity<Lab>(entity =>
             {
-                entity.HasKey(t => t.Id);
-                entity.HasIndex(t => t.Code).IsUnique();
-                entity.Property(t => t.Name).IsRequired().HasMaxLength(100);
-                entity.Property(t => t.Code).IsRequired().HasMaxLength(20);
+                entity.HasKey(l => l.Id);
+                entity.Property(l => l.Name).IsRequired().HasMaxLength(150);
             });
 
             // Configure Manifest
             modelBuilder.Entity<Manifest>(entity =>
             {
                 entity.HasKey(m => m.Id);
-                entity.HasIndex(m => m.ManifestNumber).IsUnique();
-                entity.Property(m => m.ManifestNumber).IsRequired().HasMaxLength(50);
-                entity.Property(m => m.SenderName).IsRequired().HasMaxLength(100);
-                entity.Property(m => m.Status).IsRequired().HasMaxLength(50);
+                entity.Property(m => m.Code).IsRequired().HasMaxLength(100);
+                entity.Property(m => m.SourceClinic).IsRequired().HasMaxLength(150);
+                
+                // Store Enum as string
+                entity.Property(m => m.Status)
+                    .HasConversion<string>()
+                    .HasMaxLength(50)
+                    .IsRequired();
 
-                // Global Query Filter for Tenant isolation
-                entity.HasQueryFilter(m => m.TenantId == (_tenantProvider != null ? _tenantProvider.TenantId : Guid.Empty));
+                // Relationship to Lab
+                entity.HasOne(m => m.Lab)
+                    .WithMany(l => l.Manifests)
+                    .HasForeignKey(m => m.LabId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Global Query Filter for Lab multi-tenancy
+                entity.HasQueryFilter(m => m.LabId == (_labContext != null ? _labContext.LabId : Guid.Empty));
             });
 
             // Configure Specimen
             modelBuilder.Entity<Specimen>(entity =>
             {
                 entity.HasKey(s => s.Id);
-                entity.HasIndex(s => s.SpecimenNumber).IsUnique();
-                entity.Property(s => s.SpecimenNumber).IsRequired().HasMaxLength(50);
-                entity.Property(s => s.PatientName).IsRequired().HasMaxLength(100);
-                entity.Property(s => s.AccessionNumber).IsRequired().HasMaxLength(50);
-                entity.Property(s => s.Status).IsRequired().HasMaxLength(50);
-                entity.Property(s => s.RejectionReason).HasMaxLength(250);
-                entity.Property(s => s.CheckedInBy).HasMaxLength(100);
+                entity.Property(s => s.Code).IsRequired().HasMaxLength(100);
+                entity.Property(s => s.Patient).IsRequired().HasMaxLength(150);
+                entity.Property(s => s.Site).IsRequired().HasMaxLength(100);
+                entity.Property(s => s.Provider).IsRequired().HasMaxLength(150);
+                entity.Property(s => s.ReceivedBy).HasMaxLength(150);
 
-                // Relationship: Manifest has many Specimens
+                // Store Enum as string
+                entity.Property(s => s.Status)
+                    .HasConversion<string>()
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                // Relationship to Manifest
                 entity.HasOne(s => s.Manifest)
                     .WithMany(m => m.Specimens)
                     .HasForeignKey(s => s.ManifestId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                // Global Query Filter for Tenant isolation
-                entity.HasQueryFilter(s => s.TenantId == (_tenantProvider != null ? _tenantProvider.TenantId : Guid.Empty));
+                // Cascaded Query Filter using navigation
+                entity.HasQueryFilter(s => s.Manifest != null && s.Manifest.LabId == (_labContext != null ? _labContext.LabId : Guid.Empty));
+            });
+
+            // Configure Discrepancy
+            modelBuilder.Entity<Discrepancy>(entity =>
+            {
+                entity.HasKey(d => d.Id);
+                entity.Property(d => d.Notes).HasMaxLength(500);
+
+                // Store Enums as strings
+                entity.Property(d => d.Type)
+                    .HasConversion<string>()
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                entity.Property(d => d.Status)
+                    .HasConversion<string>()
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                // Relationship to Manifest
+                entity.HasOne(d => d.Manifest)
+                    .WithMany(m => m.Discrepancies)
+                    .HasForeignKey(d => d.ManifestId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Relationship to Specimen (optional, restrict cascade paths)
+                entity.HasOne(d => d.Specimen)
+                    .WithMany()
+                    .HasForeignKey(d => d.SpecimenId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // Cascaded Query Filter using navigation
+                entity.HasQueryFilter(d => d.Manifest != null && d.Manifest.LabId == (_labContext != null ? _labContext.LabId : Guid.Empty));
             });
         }
 
         public override int SaveChanges()
         {
-            ApplyTenantId();
+            ApplyLabId();
             return base.SaveChanges();
         }
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            ApplyTenantId();
+            ApplyLabId();
             return base.SaveChangesAsync(cancellationToken);
         }
 
-        private void ApplyTenantId()
+        private void ApplyLabId()
         {
-            if (_tenantProvider == null) return;
-
-            var currentTenantId = _tenantProvider.TenantId;
-            if (currentTenantId == Guid.Empty)
-            {
-                // Note: If saving tenant-specific records without a TenantId, we could throw or let EF Core save it.
-                // We should only enforce TenantId for actual ITenantEntity implementations when they are added.
-            }
-
-            foreach (var entry in ChangeTracker.Entries<ITenantEntity>())
+            if (_labContext == null) return;
+            var activeLabId = _labContext.LabId;
+            
+            foreach (var entry in ChangeTracker.Entries<Manifest>())
             {
                 if (entry.State == EntityState.Added)
                 {
-                    // Only overwrite if it wasn't manually set to something else (e.g. for database seeding/tests)
-                    if (entry.Entity.TenantId == Guid.Empty)
+                    if (entry.Entity.LabId == Guid.Empty)
                     {
-                        entry.Entity.TenantId = currentTenantId;
+                        entry.Entity.LabId = activeLabId;
                     }
                 }
             }

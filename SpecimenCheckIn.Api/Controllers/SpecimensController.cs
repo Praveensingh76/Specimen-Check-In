@@ -15,26 +15,26 @@ namespace SpecimenCheckIn.Api.Controllers
     public class SpecimensController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
-        private readonly ITenantProvider _tenantProvider;
+        private readonly ICurrentLabContext _labContext;
 
-        public SpecimensController(ApplicationDbContext context, ITenantProvider tenantProvider)
+        public SpecimensController(ApplicationDbContext context, ICurrentLabContext labContext)
         {
             _context = context;
-            _tenantProvider = tenantProvider;
+            _labContext = labContext;
         }
 
-        private bool ValidateTenant(out Guid tenantId)
+        private bool ValidateLab(out Guid labId)
         {
-            tenantId = _tenantProvider.TenantId;
-            return tenantId != Guid.Empty;
+            labId = _labContext.LabId;
+            return labId != Guid.Empty;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Specimen>>> GetSpecimens()
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
             return await _context.Specimens.ToListAsync();
@@ -43,9 +43,9 @@ namespace SpecimenCheckIn.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<Specimen>> GetSpecimen(Guid id)
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
             var specimen = await _context.Specimens.FirstOrDefaultAsync(s => s.Id == id);
@@ -60,19 +60,19 @@ namespace SpecimenCheckIn.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<Specimen>> CreateSpecimen(Specimen specimen)
         {
-            if (!ValidateTenant(out var tenantId))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
-            if (string.IsNullOrWhiteSpace(specimen.SpecimenNumber))
+            if (string.IsNullOrWhiteSpace(specimen.Code))
             {
-                return BadRequest("Specimen number is required.");
+                return BadRequest("Specimen code is required.");
             }
 
-            if (await _context.Specimens.AnyAsync(s => s.SpecimenNumber == specimen.SpecimenNumber))
+            if (await _context.Specimens.AnyAsync(s => s.Code == specimen.Code))
             {
-                return BadRequest($"Specimen number '{specimen.SpecimenNumber}' already exists.");
+                return BadRequest($"Specimen with code '{specimen.Code}' already exists.");
             }
 
             var manifest = await _context.Manifests.FirstOrDefaultAsync(m => m.Id == specimen.ManifestId);
@@ -82,8 +82,7 @@ namespace SpecimenCheckIn.Api.Controllers
             }
 
             specimen.Id = Guid.NewGuid();
-            specimen.TenantId = tenantId;
-            specimen.Status = "Pending";
+            specimen.Status = SpecimenStatus.Pending;
 
             _context.Specimens.Add(specimen);
             await _context.SaveChangesAsync();
@@ -94,9 +93,9 @@ namespace SpecimenCheckIn.Api.Controllers
         [HttpPost("{id}/checkin")]
         public async Task<IActionResult> CheckIn(Guid id, [FromBody] CheckInRequest request)
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
             var specimen = await _context.Specimens.FirstOrDefaultAsync(s => s.Id == id);
@@ -105,30 +104,24 @@ namespace SpecimenCheckIn.Api.Controllers
                 return NotFound("Specimen not found.");
             }
 
-            specimen.Status = "CheckedIn";
-            specimen.ReceivedDate = DateTime.UtcNow;
-            specimen.CheckedInBy = string.IsNullOrWhiteSpace(request.CheckedInBy) ? "Lab User" : request.CheckedInBy;
-            specimen.RejectionReason = null; // Clear rejection reason if checking in again
+            specimen.Status = SpecimenStatus.Received;
+            specimen.ReceivedAt = DateTime.UtcNow;
+            specimen.ReceivedBy = string.IsNullOrWhiteSpace(request.ReceivedBy) ? "Lab Tech" : request.ReceivedBy;
 
             await _context.SaveChangesAsync();
 
-            // Update Manifest status if all specimens are checked in
+            // Auto-update Manifest status if all specimens are checked in or resolved
             await AutoUpdateManifestStatus(specimen.ManifestId);
 
             return Ok(specimen);
         }
 
-        [HttpPost("{id}/reject")]
-        public async Task<IActionResult> Reject(Guid id, [FromBody] RejectRequest request)
+        [HttpPost("{id}/flag")]
+        public async Task<IActionResult> Flag(Guid id, [FromBody] FlagRequest request)
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.Reason))
-            {
-                return BadRequest("Rejection reason is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
             var specimen = await _context.Specimens.FirstOrDefaultAsync(s => s.Id == id);
@@ -137,14 +130,24 @@ namespace SpecimenCheckIn.Api.Controllers
                 return NotFound("Specimen not found.");
             }
 
-            specimen.Status = "Rejected";
-            specimen.ReceivedDate = DateTime.UtcNow;
-            specimen.RejectionReason = request.Reason;
-            specimen.CheckedInBy = string.IsNullOrWhiteSpace(request.CheckedInBy) ? "Lab User" : request.CheckedInBy;
+            specimen.Status = SpecimenStatus.Flagged;
+            specimen.ReceivedAt = DateTime.UtcNow;
+            specimen.ReceivedBy = string.IsNullOrWhiteSpace(request.ReceivedBy) ? "Lab Tech" : request.ReceivedBy;
 
+            // Create a discrepancy for the flagged specimen
+            var discrepancy = new Discrepancy
+            {
+                Id = Guid.NewGuid(),
+                ManifestId = specimen.ManifestId,
+                SpecimenId = specimen.Id,
+                Type = DiscrepancyType.Missing, // or another appropriate value
+                Status = DiscrepancyStatus.Open,
+                Notes = request.Notes
+            };
+
+            _context.Discrepancies.Add(discrepancy);
             await _context.SaveChangesAsync();
 
-            // Update Manifest status if all specimens are checked in/rejected
             await AutoUpdateManifestStatus(specimen.ManifestId);
 
             return Ok(specimen);
@@ -154,22 +157,24 @@ namespace SpecimenCheckIn.Api.Controllers
         {
             var manifest = await _context.Manifests
                 .Include(m => m.Specimens)
+                .Include(m => m.Discrepancies)
                 .FirstOrDefaultAsync(m => m.Id == manifestId);
 
             if (manifest != null && manifest.Specimens.Any())
             {
-                bool allProcessed = manifest.Specimens.All(s => s.Status == "CheckedIn" || s.Status == "Rejected");
-                bool anyProcessed = manifest.Specimens.Any(s => s.Status == "CheckedIn" || s.Status == "Rejected");
+                bool anyFlagged = manifest.Specimens.Any(s => s.Status == SpecimenStatus.Flagged) || 
+                                  manifest.Discrepancies.Any(d => d.Status == DiscrepancyStatus.Open);
+                bool allProcessed = manifest.Specimens.All(s => s.Status == SpecimenStatus.Received || s.Status == SpecimenStatus.Flagged);
 
                 if (allProcessed)
                 {
-                    manifest.Status = "Completed";
+                    manifest.Status = anyFlagged ? ManifestStatus.ClosedWithDiscrepancy : ManifestStatus.Closed;
                 }
-                else if (anyProcessed)
+                else
                 {
-                    manifest.Status = "Received";
+                    manifest.Status = ManifestStatus.Open;
                 }
-                
+
                 await _context.SaveChangesAsync();
             }
         }
@@ -177,12 +182,12 @@ namespace SpecimenCheckIn.Api.Controllers
 
     public class CheckInRequest
     {
-        public string CheckedInBy { get; set; } = string.Empty;
+        public string ReceivedBy { get; set; } = string.Empty;
     }
 
-    public class RejectRequest
+    public class FlagRequest
     {
-        public string CheckedInBy { get; set; } = string.Empty;
-        public string Reason { get; set; } = string.Empty;
+        public string ReceivedBy { get; set; } = string.Empty;
+        public string Notes { get; set; } = string.Empty;
     }
 }

@@ -17,19 +17,19 @@ namespace SpecimenCheckIn.Tests
     public class ManifestControllerTests
     {
         [Fact]
-        public async Task GetManifests_ShouldReturnBadRequest_WhenTenantIdIsEmpty()
+        public async Task GetManifests_ShouldReturnBadRequest_WhenLabIdIsEmpty()
         {
             // Arrange
-            var tenantProviderMock = new Mock<ITenantProvider>();
-            tenantProviderMock.Setup(p => p.TenantId).Returns(Guid.Empty);
+            var labContextMock = new Mock<ICurrentLabContext>();
+            labContextMock.Setup(p => p.LabId).Returns(Guid.Empty);
 
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
                 .Options;
 
-            using (var context = new ApplicationDbContext(options, tenantProviderMock.Object))
+            using (var context = new ApplicationDbContext(options, labContextMock.Object))
             {
-                var controller = new ManifestsController(context, tenantProviderMock.Object);
+                var controller = new ManifestsController(context, labContextMock.Object);
 
                 // Act
                 var result = await controller.GetManifests();
@@ -40,12 +40,12 @@ namespace SpecimenCheckIn.Tests
         }
 
         [Fact]
-        public async Task GetManifests_ShouldReturnManifests_ForActiveTenant()
+        public async Task GetManifests_ShouldReturnManifests_ForActiveLab()
         {
             // Arrange
-            var tenantId = Guid.NewGuid();
-            var tenantProviderMock = new Mock<ITenantProvider>();
-            tenantProviderMock.Setup(p => p.TenantId).Returns(tenantId);
+            var labId = Guid.NewGuid();
+            var labContextMock = new Mock<ICurrentLabContext>();
+            labContextMock.Setup(p => p.LabId).Returns(labId);
 
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
@@ -53,13 +53,13 @@ namespace SpecimenCheckIn.Tests
 
             using (var context = new ApplicationDbContext(options))
             {
-                context.Manifests.Add(new Manifest { Id = Guid.NewGuid(), ManifestNumber = "M-100", TenantId = tenantId, SenderName = "Courier A" });
+                context.Manifests.Add(new Manifest { Id = Guid.NewGuid(), Code = "MNF-100", LabId = labId, SourceClinic = "Courier A" });
                 context.SaveChanges();
             }
 
-            using (var context = new ApplicationDbContext(options, tenantProviderMock.Object))
+            using (var context = new ApplicationDbContext(options, labContextMock.Object))
             {
-                var controller = new ManifestsController(context, tenantProviderMock.Object);
+                var controller = new ManifestsController(context, labContextMock.Object);
 
                 // Act
                 var result = await controller.GetManifests();
@@ -67,7 +67,7 @@ namespace SpecimenCheckIn.Tests
                 // Assert
                 var okResult = result.Value.Should().NotBeNull().And.BeAssignableTo<IEnumerable<Manifest>>().Subject;
                 okResult.Should().HaveCount(1);
-                okResult.First().ManifestNumber.Should().Be("M-100");
+                okResult.First().Code.Should().Be("MNF-100");
             }
         }
     }

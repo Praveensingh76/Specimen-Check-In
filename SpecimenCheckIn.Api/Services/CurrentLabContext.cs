@@ -3,31 +3,31 @@ using Microsoft.AspNetCore.Http;
 
 namespace SpecimenCheckIn.Api.Services
 {
-    public class TenantProvider : ITenantProvider
+    public class CurrentLabContext : ICurrentLabContext
     {
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private Guid? _tenantId;
+        private Guid? _labId;
 
-        public TenantProvider(IHttpContextAccessor httpContextAccessor)
+        public CurrentLabContext(IHttpContextAccessor httpContextAccessor)
         {
             _httpContextAccessor = httpContextAccessor;
         }
 
-        public Guid TenantId
+        public Guid LabId
         {
             get
             {
-                if (_tenantId.HasValue)
+                if (_labId.HasValue)
                 {
-                    return _tenantId.Value;
+                    return _labId.Value;
                 }
 
                 var context = _httpContextAccessor.HttpContext;
-                if (context != null && context.Request.Headers.TryGetValue("X-Tenant-ID", out var tenantIdStr))
+                if (context != null && context.Request.Headers.TryGetValue("X-Lab-Id", out var labIdStr))
                 {
-                    if (Guid.TryParse(tenantIdStr, out var parsedId))
+                    if (Guid.TryParse(labIdStr, out var parsedId))
                     {
-                        _tenantId = parsedId;
+                        _labId = parsedId;
                         return parsedId;
                     }
                 }
@@ -36,9 +36,9 @@ namespace SpecimenCheckIn.Api.Services
             }
         }
 
-        public void SetTenantId(Guid tenantId)
+        public void SetLabId(Guid labId)
         {
-            _tenantId = tenantId;
+            _labId = labId;
         }
     }
 }

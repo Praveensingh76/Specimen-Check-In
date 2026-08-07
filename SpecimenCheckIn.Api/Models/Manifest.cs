@@ -1,17 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace SpecimenCheckIn.Api.Models
 {
-    public class Manifest : ITenantEntity
+    public class Manifest
     {
         public Guid Id { get; set; }
-        public string ManifestNumber { get; set; } = string.Empty;
-        public string SenderName { get; set; } = string.Empty;
-        public string Status { get; set; } = "Created"; // "Created", "Received", "Completed"
-        public Guid TenantId { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public Guid LabId { get; set; }
+        public string Code { get; set; } = string.Empty;
+        
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public ManifestStatus Status { get; set; } = ManifestStatus.Open;
+        
+        public DateTime SentAt { get; set; }
+        public string SourceClinic { get; set; } = string.Empty;
+
+        [JsonIgnore]
+        public Lab? Lab { get; set; }
 
         public List<Specimen> Specimens { get; set; } = new();
+        public List<Discrepancy> Discrepancies { get; set; } = new();
     }
 }

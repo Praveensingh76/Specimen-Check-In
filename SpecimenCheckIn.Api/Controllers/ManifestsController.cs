@@ -15,50 +15,51 @@ namespace SpecimenCheckIn.Api.Controllers
     public class ManifestsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
-        private readonly ITenantProvider _tenantProvider;
+        private readonly ICurrentLabContext _labContext;
 
-        public ManifestsController(ApplicationDbContext context, ITenantProvider tenantProvider)
+        public ManifestsController(ApplicationDbContext context, ICurrentLabContext labContext)
         {
             _context = context;
-            _tenantProvider = tenantProvider;
+            _labContext = labContext;
         }
 
-        private bool ValidateTenant(out Guid tenantId)
+        private bool ValidateLab(out Guid labId)
         {
-            tenantId = _tenantProvider.TenantId;
-            return tenantId != Guid.Empty;
+            labId = _labContext.LabId;
+            return labId != Guid.Empty;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Manifest>>> GetManifests()
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
-            // Global Query Filters automatically scope this to the current tenant
             return await _context.Manifests
                 .Include(m => m.Specimens)
-                .OrderByDescending(m => m.CreatedAt)
+                .Include(m => m.Discrepancies)
+                .OrderByDescending(m => m.SentAt)
                 .ToListAsync();
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<Manifest>> GetManifest(Guid id)
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
             var manifest = await _context.Manifests
                 .Include(m => m.Specimens)
+                .Include(m => m.Discrepancies)
                 .FirstOrDefaultAsync(m => m.Id == id);
 
             if (manifest == null)
             {
-                return NotFound("Manifest not found under the active tenant.");
+                return NotFound("Manifest not found under the active lab.");
             }
 
             return manifest;
@@ -67,35 +68,33 @@ namespace SpecimenCheckIn.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<Manifest>> CreateManifest(Manifest manifest)
         {
-            if (!ValidateTenant(out var tenantId))
+            if (!ValidateLab(out var labId))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
-            if (string.IsNullOrWhiteSpace(manifest.ManifestNumber))
+            if (string.IsNullOrWhiteSpace(manifest.Code))
             {
-                return BadRequest("Manifest number is required.");
+                return BadRequest("Manifest code is required.");
             }
 
-            if (await _context.Manifests.AnyAsync(m => m.ManifestNumber == manifest.ManifestNumber))
+            if (await _context.Manifests.AnyAsync(m => m.Code == manifest.Code))
             {
-                return BadRequest($"Manifest number '{manifest.ManifestNumber}' is already in use.");
+                return BadRequest($"Manifest with code '{manifest.Code}' already exists.");
             }
 
             manifest.Id = Guid.NewGuid();
-            manifest.TenantId = tenantId;
-            manifest.CreatedAt = DateTime.UtcNow;
-            manifest.Status = "Created";
+            manifest.LabId = labId;
+            manifest.SentAt = DateTime.UtcNow;
+            manifest.Status = ManifestStatus.Open;
 
-            // If specimens are submitted with the manifest, assign IDs and TenantIds
             if (manifest.Specimens != null)
             {
                 foreach (var specimen in manifest.Specimens)
                 {
                     specimen.Id = Guid.NewGuid();
                     specimen.ManifestId = manifest.Id;
-                    specimen.TenantId = tenantId;
-                    specimen.Status = "Pending";
+                    specimen.Status = SpecimenStatus.Pending;
                 }
             }
 
@@ -108,18 +107,18 @@ namespace SpecimenCheckIn.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateManifest(Guid id, Manifest manifestUpdate)
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
             var manifest = await _context.Manifests.FirstOrDefaultAsync(m => m.Id == id);
             if (manifest == null)
             {
-                return NotFound("Manifest not found under the active tenant.");
+                return NotFound("Manifest not found under the active lab.");
             }
 
-            manifest.SenderName = manifestUpdate.SenderName;
+            manifest.SourceClinic = manifestUpdate.SourceClinic;
             manifest.Status = manifestUpdate.Status;
 
             await _context.SaveChangesAsync();
@@ -129,9 +128,9 @@ namespace SpecimenCheckIn.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteManifest(Guid id)
         {
-            if (!ValidateTenant(out _))
+            if (!ValidateLab(out _))
             {
-                return BadRequest("A valid X-Tenant-ID header is required.");
+                return BadRequest("A valid X-Lab-Id header is required.");
             }
 
             var manifest = await _context.Manifests.FirstOrDefaultAsync(m => m.Id == id);

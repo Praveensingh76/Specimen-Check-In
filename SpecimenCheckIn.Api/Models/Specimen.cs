@@ -3,19 +3,20 @@ using System.Text.Json.Serialization;
 
 namespace SpecimenCheckIn.Api.Models
 {
-    public class Specimen : ITenantEntity
+    public class Specimen
     {
         public Guid Id { get; set; }
         public Guid ManifestId { get; set; }
-        public string SpecimenNumber { get; set; } = string.Empty;
-        public string PatientName { get; set; } = string.Empty;
-        public string AccessionNumber { get; set; } = string.Empty;
-        public DateTime CollectionDate { get; set; }
-        public DateTime? ReceivedDate { get; set; }
-        public string Status { get; set; } = "Pending"; // "Pending", "CheckedIn", "Rejected"
-        public string? RejectionReason { get; set; }
-        public Guid TenantId { get; set; }
-        public string? CheckedInBy { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public string Patient { get; set; } = string.Empty;
+        public string Site { get; set; } = string.Empty;
+        public string Provider { get; set; } = string.Empty;
+
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public SpecimenStatus Status { get; set; } = SpecimenStatus.Pending;
+
+        public string? ReceivedBy { get; set; }
+        public DateTime? ReceivedAt { get; set; }
 
         [JsonIgnore]
         public Manifest? Manifest { get; set; }
