@@ -1,0 +1,48 @@
+<div class="manifest-list-container">
+  <div class="list-header">
+    <h3>Recent Manifests</h3>
+    <span class="count-tag">{{ manifests().length }} total</span>
+  </div>
+
+  <div class="scrollable-list">
+    @for (manifest of manifests(); track manifest.id) {
+      <div 
+        class="manifest-item"
+        [class.selected]="manifest.id === selectedId()"
+        (click)="onSelect(manifest.id)"
+      >
+        <div class="item-header">
+          <span class="manifest-code font-mono">{{ manifest.code }}</span>
+          
+          <!-- Dynamic Status Badge -->
+          @if (manifest.status === 'Closed') {
+            <span class="badge badge-success">Closed</span>
+          } @else if (manifest.status === 'ClosedWithDiscrepancy') {
+            <span class="badge badge-danger">Closed (Discrepant)</span>
+          } @else {
+            @if (getDiscrepanciesCount(manifest) > 0) {
+              <span class="badge badge-danger">{{ getDiscrepanciesCount(manifest) }} Discrepancies</span>
+            } @else if (getReceivedCount(manifest) > 0) {
+              <span class="badge badge-info">In Progress</span>
+            } @else {
+              <span class="badge badge-pending">Open</span>
+            }
+          }
+        </div>
+
+        <div class="item-clinic">
+          <span class="icon">🏥</span> {{ manifest.sourceClinic }}
+        </div>
+
+        <div class="item-meta">
+          <span class="received-count">
+            📥 {{ getReceivedCount(manifest) }} / {{ getSpecimensCount(manifest) }} received
+          </span>
+          <span class="date-tag">
+            {{ manifest.sentAt | date:'MMM d' }}
+          </span>
+        </div>
+      </div>
+    }
+  </div>
+</div>

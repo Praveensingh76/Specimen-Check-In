@@ -1,13 +1,13 @@
+export type SpecimenStatus = 'Pending' | 'Received' | 'Flagged';
+
 export interface Specimen {
   id: string;
   manifestId: string;
-  specimenNumber: string;
-  patientName: string;
-  accessionNumber: string;
-  collectionDate: string;
-  receivedDate?: string;
-  status: 'Pending' | 'CheckedIn' | 'Rejected';
-  rejectionReason?: string;
-  tenantId: string;
-  checkedInBy?: string;
+  code: string;
+  patient: string;
+  site: string;
+  provider: string;
+  status: SpecimenStatus;
+  receivedBy?: string;
+  receivedAt?: string;
 }

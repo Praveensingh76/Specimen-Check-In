@@ -1,203 +1,157 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Component, input, output, inject, signal, computed, effect } from '@angular/core';
 import { DatePipe, CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { ManifestService } from '../../services/manifest.service';
-import { SpecimenService } from '../../services/specimen.service';
-import { TenantService } from '../../services/tenant.service';
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { Manifest } from '../../models/manifest.model';
 import { Specimen } from '../../models/specimen.model';
+import { StatusClassPipe } from '../../pipes/status-class.pipe';
+import { ManifestService } from '../../services/manifest.service';
 
 @Component({
   selector: 'app-manifest-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, FormsModule, CommonModule],
+  imports: [DatePipe, CommonModule, ReactiveFormsModule, FormsModule, StatusClassPipe],
   templateUrl: './manifest-detail.html',
   styleUrl: './manifest-detail.css'
 })
-export class ManifestDetail implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly manifestService = inject(ManifestService);
-  private readonly specimenService = inject(SpecimenService);
-  protected readonly tenantService = inject(TenantService);
+export class ManifestDetail {
+  private readonly fb = inject(FormBuilder);
+  protected readonly manifestService = inject(ManifestService);
 
-  readonly manifest = signal<Manifest | null>(null);
-  readonly isLoading = signal<boolean>(false);
-  readonly errorMessage = signal<string>('');
-  readonly successMessage = signal<string>('');
+  readonly manifest = input<Manifest | null>(null);
+  readonly operatorName = input<string>('Lab Tech Alice');
+  
+  // Events
+  readonly errorOccurred = output<string>();
+  readonly successOccurred = output<string>();
 
-  // Barcode quick check-in input
-  readonly barcodeSearchInput = signal<string>('');
+  // State
+  readonly isFlagDialogOpen = signal<boolean>(false);
+  readonly flaggingSpecimen = signal<Specimen | null>(null);
+  readonly isSubmitting = signal<boolean>(false);
+  
+  readonly flagForm: FormGroup;
 
-  // Filtering list
-  readonly filterQuery = signal<string>('');
+  // Stats computed from active manifest input signal
+  readonly stats = computed(() => {
+    const m = this.manifest();
+    if (!m) return { expected: 0, received: 0, pending: 0, flagged: 0, openDiscrepancies: 0 };
 
-  // Rejection modal control
-  readonly activeRejectionSpecimen = signal<Specimen | null>(null);
-  readonly rejectionReason = signal<string>('');
-  readonly isRejecting = signal<boolean>(false);
+    const specimens = m.specimens || [];
+    const discrepancies = m.discrepancies || [];
 
-  // Operator ID/Name for check-in audits
-  readonly operatorName = signal<string>('Lab Tech Alice');
-
-  // Filtered specimens list
-  readonly filteredSpecimens = computed(() => {
-    const list = this.manifest()?.specimens || [];
-    const query = this.filterQuery().toLowerCase().trim();
-    if (!query) return list;
-
-    return list.filter(s => 
-      s.specimenNumber.toLowerCase().includes(query) ||
-      s.patientName.toLowerCase().includes(query) ||
-      s.accessionNumber.toLowerCase().includes(query)
-    );
+    return {
+      expected: specimens.length,
+      received: specimens.filter(s => s.status === 'Received').length,
+      pending: specimens.filter(s => s.status === 'Pending').length,
+      flagged: specimens.filter(s => s.status === 'Flagged').length,
+      openDiscrepancies: discrepancies.filter(d => d.status === 'Open').length
+    };
   });
 
-  ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (id) {
-      this.loadManifest(id);
-    }
+  // Reconciled flag: true if no pending specimens AND no open discrepancies
+  readonly isReconciled = computed(() => {
+    const s = this.stats();
+    return s.expected > 0 && s.pending === 0 && s.openDiscrepancies === 0;
+  });
+
+  constructor() {
+    this.flagForm = this.fb.group({
+      receivedBy: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
+      specimenId: ['', [Validators.required]],
+      notes: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(500)]]
+    });
+
+    // Automatically sync operator name into the form
+    effect(() => {
+      this.flagForm.patchValue({ receivedBy: this.operatorName() });
+    });
   }
 
-  loadManifest(id: string): void {
-    this.isLoading.set(true);
-    this.errorMessage.set('');
+  onReceiveSpecimen(specimen: Specimen): void {
+    const m = this.manifest();
+    if (!m) return;
+
+    this.manifestService.receiveSpecimen(m.id, specimen.id, this.operatorName()).subscribe({
+      next: () => {
+        this.successOccurred.emit(`Specimen ${specimen.code} marked as Received.`);
+      },
+      error: (err) => {
+        this.errorOccurred.emit(err.error?.detail || 'Failed to receive specimen.');
+      }
+    });
+  }
+
+  openFlagDialog(specimen: Specimen | null): void {
+    this.flaggingSpecimen.set(specimen);
+    this.flagForm.patchValue({
+      receivedBy: this.operatorName(),
+      specimenId: specimen ? specimen.id : '',
+      notes: ''
+    });
     
-    this.manifestService.getManifest(id).subscribe({
-      next: (data) => {
-        this.manifest.set(data);
-        this.isLoading.set(false);
-      },
-      error: (err) => {
-        this.isLoading.set(false);
-        this.errorMessage.set('Failed to load manifest details.');
-        console.error(err);
-      }
-    });
+    // Enable/disable specimen selection dropdown
+    if (specimen) {
+      this.flagForm.get('specimenId')?.disable();
+    } else {
+      this.flagForm.get('specimenId')?.enable();
+    }
+
+    this.flagForm.markAsPristine();
+    this.flagForm.markAsUntouched();
+    this.isFlagDialogOpen.set(true);
   }
 
-  checkInSpecimen(specimen: Specimen): void {
-    this.clearAlerts();
-    this.specimenService.checkInSpecimen(specimen.id, this.operatorName()).subscribe({
-      next: (updatedSpecimen) => {
-        this.showSuccess(`Specimen ${updatedSpecimen.specimenNumber} checked in successfully!`);
-        this.refreshSpecimenList(updatedSpecimen);
-      },
-      error: (err) => {
-        this.errorMessage.set(err.error || 'Failed to check in specimen.');
-      }
-    });
+  closeFlagDialog(): void {
+    this.isFlagDialogOpen.set(false);
+    this.flaggingSpecimen.set(null);
   }
 
-  openRejectionModal(specimen: Specimen): void {
-    this.clearAlerts();
-    this.activeRejectionSpecimen.set(specimen);
-    this.rejectionReason.set('');
-  }
-
-  closeRejectionModal(): void {
-    this.activeRejectionSpecimen.set(null);
-  }
-
-  submitRejection(): void {
-    const specimen = this.activeRejectionSpecimen();
-    const reason = this.rejectionReason().trim();
-
-    if (!specimen || !reason) return;
-
-    this.isRejecting.set(true);
-    this.specimenService.rejectSpecimen(specimen.id, this.operatorName(), reason).subscribe({
-      next: (updatedSpecimen) => {
-        this.showSuccess(`Specimen ${updatedSpecimen.specimenNumber} rejected: ${reason}`);
-        this.refreshSpecimenList(updatedSpecimen);
-        this.isRejecting.set(false);
-        this.closeRejectionModal();
-      },
-      error: (err) => {
-        this.isRejecting.set(false);
-        this.errorMessage.set(err.error || 'Failed to reject specimen.');
-        this.closeRejectionModal();
-      }
-    });
-  }
-
-  // Simulates scanning a barcode (e.g. typing barcode and hitting Enter)
-  onBarcodeScan(): void {
-    const code = this.barcodeSearchInput().trim();
-    if (!code) return;
-
-    this.clearAlerts();
-    const specimensList = this.manifest()?.specimens || [];
-    const found = specimensList.find(s => s.specimenNumber.toLowerCase() === code.toLowerCase());
-
-    if (!found) {
-      this.errorMessage.set(`Barcode '${code}' not found in this manifest.`);
-      this.barcodeSearchInput.set('');
+  onFlagSpecimenSubmit(): void {
+    if (this.flagForm.invalid) {
+      this.flagForm.markAllAsTouched();
       return;
     }
 
-    if (found.status === 'CheckedIn') {
-      this.showSuccess(`Specimen ${found.specimenNumber} is already checked in.`);
-      this.barcodeSearchInput.set('');
+    const m = this.manifest();
+    if (!m) return;
+
+    // Use selected specimen ID from form (handles both disabled row selection and enabled top-right dropdown)
+    const rawFormValue = this.flagForm.getRawValue();
+    const targetSpecimenId = rawFormValue.specimenId;
+    const targetSpecimen = m.specimens?.find(s => s.id === targetSpecimenId);
+
+    if (!targetSpecimenId || !targetSpecimen) {
+      this.errorOccurred.emit('Please select a valid specimen to flag.');
       return;
     }
 
-    // Auto check-in if found
-    this.checkInSpecimen(found);
-    this.barcodeSearchInput.set('');
-  }
+    this.isSubmitting.set(true);
 
-  private refreshSpecimenList(updated: Specimen): void {
-    const currentManifest = this.manifest();
-    if (!currentManifest || !currentManifest.specimens) return;
-
-    // Replace the updated specimen in the manifest signals
-    const updatedSpecimens = currentManifest.specimens.map(s => 
-      s.id === updated.id ? updated : s
-    );
-
-    // Re-calculate the manifest status based on updated list
-    const allProcessed = updatedSpecimens.all(s => s.status === 'CheckedIn' || s.status === 'Rejected');
-    const anyProcessed = updatedSpecimens.any(s => s.status === 'CheckedIn' || s.status === 'Rejected');
-    
-    let newStatus = currentManifest.status;
-    if (allProcessed) {
-      newStatus = 'Completed';
-    } else if (anyProcessed) {
-      newStatus = 'Received';
-    }
-
-    this.manifest.set({
-      ...currentManifest,
-      status: newStatus,
-      specimens: updatedSpecimens
+    this.manifestService.flagSpecimen(m.id, targetSpecimenId, rawFormValue.receivedBy, rawFormValue.notes).subscribe({
+      next: () => {
+        this.isSubmitting.set(false);
+        this.successOccurred.emit(`Specimen ${targetSpecimen.code} marked as Flagged (Discrepancy raised).`);
+        this.closeFlagDialog();
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.errorOccurred.emit(err.error?.detail || 'Failed to flag specimen.');
+        this.closeFlagDialog();
+      }
     });
   }
 
-  private clearAlerts(): void {
-    this.errorMessage.set('');
-    this.successMessage.set('');
-  }
+  onCloseManifest(): void {
+    const m = this.manifest();
+    if (!m) return;
 
-  private showSuccess(msg: string): void {
-    this.successMessage.set(msg);
-    // Auto clear success message after 5 seconds
-    setTimeout(() => {
-      if (this.successMessage() === msg) {
-        this.successMessage.set('');
+    this.manifestService.closeManifest(m.id).subscribe({
+      next: (closedManifest) => {
+        this.successOccurred.emit(`Manifest ${closedManifest.code} successfully Reconciled & Closed.`);
+      },
+      error: (err) => {
+        this.errorOccurred.emit(err.error?.detail || 'Failed to close manifest.');
       }
-    }, 5000);
+    });
   }
 }
-
-// Inline JS-like extensions for Array
-declare global {
-  interface Array<T> {
-    all(predicate: (value: T, index: number, array: T[]) => boolean): boolean;
-    any(predicate: (value: T, index: number, array: T[]) => boolean): boolean;
-  }
-}
-// Implement arrays helpers if they don't compile, although native typescript supports .every and .some
-Array.prototype.all = Array.prototype.every;
-Array.prototype.any = Array.prototype.some;

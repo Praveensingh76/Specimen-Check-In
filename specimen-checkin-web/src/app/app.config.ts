@@ -1,7 +1,7 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { tenantInterceptor } from './services/tenant.interceptor';
+import { labInterceptor } from './services/lab.interceptor';
 
 import { routes } from './app.routes';
 
@@ -9,6 +9,6 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
-    provideHttpClient(withInterceptors([tenantInterceptor]))
+    provideHttpClient(withInterceptors([labInterceptor]))
   ]
 };

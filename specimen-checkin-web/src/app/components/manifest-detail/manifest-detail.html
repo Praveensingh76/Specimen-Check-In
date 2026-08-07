@@ -1,214 +1,225 @@
-<div class="container fade-in">
-  <!-- Back navigation and header -->
-  <div class="header-section">
-    <a routerLink="/" class="back-link">← Back to Dashboard</a>
-    
-    @if (manifest(); as m) {
-      <div class="manifest-header-card glass-card">
-        <div class="manifest-info">
-          <span class="manifest-tag font-mono text-indigo">{{ m.manifestNumber }}</span>
-          <h2>Manifest Details & Check-In</h2>
-          <p class="courier-text">Courier: <strong>{{ m.senderName }}</strong> | Created: {{ m.createdAt | date:'MMM d, y, h:mm a' }}</p>
+@if (manifest(); as m) {
+  <div class="manifest-detail-container">
+    <!-- Header Area -->
+    <div class="detail-header">
+      <div class="header-main">
+        <div class="code-and-status">
+          <span class="manifest-code font-mono">{{ m.code }}</span>
+          <span [class]="m.status | statusClass">{{ m.status }}</span>
         </div>
-        <div class="manifest-status-badge">
-          @if (m.status === 'Completed') {
-            <span class="badge badge-success">Completed</span>
-          } @else if (m.status === 'Received') {
-            <span class="badge badge-info">In Progress</span>
-          } @else {
-            <span class="badge badge-pending">New / Created</span>
-          }
+        <div class="header-meta">
+          <span>🏥 {{ m.sourceClinic }}</span>
+          <span>📅 Sent: {{ m.sentAt | date:'MMM d, y, h:mm a' }}</span>
+          <span>🧪 Expected Samples: <strong>{{ stats().expected }}</strong></span>
         </div>
       </div>
-    }
-  </div>
-
-  <!-- Operator / Auditor Section -->
-  <div class="operator-bar glass-card">
-    <div class="form-group flex-row">
-      <label for="operatorNameInput">Operator Identity:</label>
-      <input 
-        type="text" 
-        id="operatorNameInput" 
-        [(ngModel)]="operatorName" 
-        placeholder="Operator name"
-        class="operator-input"
-      />
-    </div>
-  </div>
-
-  <!-- Messages Alert -->
-  @if (successMessage()) {
-    <div class="alert alert-success fade-in">
-      <span class="alert-icon">✓</span>
-      <span class="alert-message">{{ successMessage() }}</span>
-    </div>
-  }
-  @if (errorMessage()) {
-    <div class="alert alert-danger fade-in">
-      <span class="alert-icon">⚠</span>
-      <span class="alert-message">{{ errorMessage() }}</span>
-    </div>
-  }
-
-  <!-- Scanning / Filtering Tools -->
-  <div class="tools-grid">
-    <!-- Barcode Simulator Box -->
-    <div class="glass-card scanner-card">
-      <h3>📟 Barcode Scanner Simulator</h3>
-      <p class="helper-text">Type or paste a specimen barcode and press Enter to instantly Check-In.</p>
-      <div class="input-scanner-wrapper">
-        <input 
-          type="text" 
-          [(ngModel)]="barcodeSearchInput" 
-          (keyup.enter)="onBarcodeScan()"
-          placeholder="Scan or type barcode (e.g. SPC-987655) + Enter"
-          class="scanner-input"
-        />
-        <button class="btn btn-primary" (click)="onBarcodeScan()">Scan</button>
+      
+      <!-- Top-right Action Buttons -->
+      <div class="header-actions">
+        <!-- Flag Discrepancy (outline/danger) -->
+        <button 
+          type="button" 
+          class="btn btn-outline-danger" 
+          (click)="openFlagDialog(null)"
+          [disabled]="m.status === 'Closed' || m.status === 'ClosedWithDiscrepancy'"
+        >
+          ⚠ Flag Discrepancy
+        </button>
+        
+        <!-- Mark Received & Close (primary, disabled until reconciled) -->
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="onCloseManifest()"
+          [disabled]="!isReconciled() || m.status === 'Closed' || m.status === 'ClosedWithDiscrepancy'"
+          title="Manifest must have 0 pending specimens and 0 open discrepancies to close."
+        >
+          🔒 Mark Received & Close
+        </button>
       </div>
     </div>
 
-    <!-- Search Filtering Box -->
-    <div class="glass-card search-card">
-      <h3>🔍 Search Specimens</h3>
-      <p class="helper-text">Search specimen table by Patient Name, Barcode, or Accession Number.</p>
-      <input 
-        type="text" 
-        [(ngModel)]="filterQuery" 
-        placeholder="Filter table content..."
-      />
-    </div>
-  </div>
-
-  <!-- Specimens Table -->
-  <div class="glass-card specimens-table-card">
-    <div class="section-title-bar">
-      <h3>Samples in this Manifest ({{ filteredSpecimens().length }} of {{ manifest()?.specimens?.length || 0 }})</h3>
-    </div>
-
-    @if (isLoading()) {
-      <div class="loading-state">
-        <div class="spinner"></div>
-        <p>Loading specimens...</p>
+    <!-- Stat Tiles Grid -->
+    <div class="stats-grid">
+      <div class="stat-tile">
+        <span class="tile-label">Expected</span>
+        <span class="tile-value">{{ stats().expected }}</span>
       </div>
-    } @else if (filteredSpecimens().length === 0) {
-      <div class="empty-state">
-        <p>No specimens match the search filter.</p>
+      <div class="stat-tile success">
+        <span class="tile-label">Received</span>
+        <span class="tile-value">{{ stats().received }}</span>
       </div>
-    } @else {
-      <div class="table-wrapper">
-        <table class="specimens-table">
-          <thead>
-            <tr>
-              <th>Barcode</th>
-              <th>Patient Name</th>
-              <th>Accession ID</th>
-              <th>Collected At</th>
-              <th>Checked-In At</th>
-              <th>Operator / Notes</th>
-              <th>Status</th>
-              <th class="text-right">Check-In Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (s of filteredSpecimens(); track s.id) {
-              <tr [class.row-checked-in]="s.status === 'CheckedIn'" [class.row-rejected]="s.status === 'Rejected'">
-                <td class="font-mono text-bold">{{ s.specimenNumber }}</td>
-                <td>{{ s.patientName }}</td>
-                <td class="font-mono text-secondary">{{ s.accessionNumber }}</td>
-                <td class="text-secondary">{{ s.collectionDate | date:'MMM d, y, h:mm a' }}</td>
-                <td class="text-secondary">
-                  {{ s.receivedDate ? (s.receivedDate | date:'MMM d, y, h:mm a') : '—' }}
-                </td>
-                <td>
-                  @if (s.status === 'CheckedIn') {
-                    <span class="operator-tag">By: {{ s.checkedInBy || 'System' }}</span>
-                  } @else if (s.status === 'Rejected') {
-                    <span class="operator-tag">By: {{ s.checkedInBy || 'System' }}</span>
-                    <p class="rejection-reason-text">Reason: "{{ s.rejectionReason }}"</p>
-                  } @else {
-                    <span class="text-muted">—</span>
-                  }
-                </td>
-                <td>
-                  @if (s.status === 'CheckedIn') {
-                    <span class="badge badge-success">Checked In</span>
-                  } @else if (s.status === 'Rejected') {
-                    <span class="badge badge-danger">Rejected</span>
-                  } @else {
-                    <span class="badge badge-pending">Pending</span>
-                  }
-                </td>
-                <td class="text-right actions-cell">
-                  @if (s.status === 'Pending') {
-                    <button class="btn btn-success btn-xs" (click)="checkInSpecimen(s)">
-                      ✓ Check In
-                    </button>
-                    <button class="btn btn-danger btn-xs" (click)="openRejectionModal(s)">
-                      ✗ Reject
-                    </button>
-                  } @else {
-                    <span class="processed-checkmark">✓ Verified</span>
-                  }
-                </td>
-              </tr>
+      <div class="stat-tile warning">
+        <span class="tile-label">Pending</span>
+        <span class="tile-value">{{ stats().pending }}</span>
+      </div>
+      <div class="stat-tile danger">
+        <span class="tile-label">Flagged</span>
+        <span class="tile-value">{{ stats().flagged }}</span>
+      </div>
+    </div>
+
+    <!-- Discrepancy Alert Banner if there are open discrepancies -->
+    @if (stats().openDiscrepancies > 0) {
+      <div class="discrepancy-banner alert alert-danger fade-in">
+        <span class="alert-icon">⚠</span>
+        <div class="alert-content">
+          <strong>Unresolved Discrepancies Raised:</strong>
+          <ul class="discrepancy-list">
+            @for (d of m.discrepancies; track d.id) {
+              @if (d.status === 'Open') {
+                <li>
+                  <strong>{{ d.type }}:</strong> {{ d.notes }}
+                </li>
+              }
             }
-          </tbody>
-        </table>
+          </ul>
+        </div>
       </div>
     }
+
+    <!-- Specimen Table -->
+    <div class="table-wrapper">
+      <table class="specimen-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Specimen ID</th>
+            <th>Patient</th>
+            <th>Site</th>
+            <th>Provider</th>
+            <th>Received By</th>
+            <th>At</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (s of m.specimens; track s.id) {
+            <tr [class.row-received]="s.status === 'Received'" [class.row-flagged]="s.status === 'Flagged'">
+              <td>
+                <span [class]="s.status | statusClass">{{ s.status }}</span>
+              </td>
+              <td class="font-mono text-bold">{{ s.code }}</td>
+              <td>{{ s.patient }}</td>
+              <td>{{ s.site }}</td>
+              <td>{{ s.provider }}</td>
+              <td>
+                <span class="operator-name">{{ s.receivedBy || '—' }}</span>
+              </td>
+              <td class="date-cell">
+                {{ s.receivedAt ? (s.receivedAt | date:'MMM d, h:mm a') : '—' }}
+              </td>
+              <td class="text-right action-buttons-cell">
+                @if (s.status === 'Pending') {
+                  <button 
+                    type="button" 
+                    class="btn btn-success btn-xs" 
+                    (click)="onReceiveSpecimen(s)"
+                    [disabled]="m.status === 'Closed' || m.status === 'ClosedWithDiscrepancy'"
+                  >
+                    ✓ Receive
+                  </button>
+                  <button 
+                    type="button" 
+                    class="btn btn-outline-danger btn-xs" 
+                    (click)="openFlagDialog(s)"
+                    [disabled]="m.status === 'Closed' || m.status === 'ClosedWithDiscrepancy'"
+                  >
+                    ⚠ Flag
+                  </button>
+                } @else {
+                  <span class="action-done-label">✓ Reconciled</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
   </div>
+} @else {
+  <div class="empty-detail-state">
+    <div class="empty-icon">🔬</div>
+    <h3>No Manifest Selected</h3>
+    <p>Select a manifest from the left panel to begin check-in and reconciliation.</p>
+  </div>
+}
 
-  <!-- Rejection Modal Overlay -->
-  @if (activeRejectionSpecimen(); as activeSpecimen) {
-    <div class="modal-overlay fade-in">
-      <div class="modal-card glass-card">
-        <div class="modal-header">
-          <h3>Reject Specimen Container</h3>
-          <button class="btn-close" (click)="closeRejectionModal()">×</button>
-        </div>
+<!-- Flag Discrepancy Dialog (Modal Overlay) -->
+@if (isFlagDialogOpen()) {
+  <div class="modal-overlay fade-in">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <h3>Flag Specimen Discrepancy</h3>
+        <button class="btn-close" (click)="closeFlagDialog()">×</button>
+      </div>
+      
+      <form [formGroup]="flagForm" (ngSubmit)="onFlagSpecimenSubmit()">
         <div class="modal-body">
-          <p>You are rejecting specimen <strong>{{ activeSpecimen.specimenNumber }}</strong> for Patient <strong>{{ activeSpecimen.patientName }}</strong>.</p>
-          
+          <!-- Operator ID -->
           <div class="form-group">
-            <label for="rejectReasonSelect">Select Rejection Reason</label>
-            <select id="rejectReasonSelect" [(ngModel)]="rejectionReason">
-              <option value="">-- Choose Reason --</option>
-              <option value="Leakage in container">Leakage / Spill in container</option>
-              <option value="Insufficient volume">Insufficient volume (QNS)</option>
-              <option value="Mismatched labels">Mismatched specimen/requisition label</option>
-              <option value="Incorrect container type">Incorrect container/additive type</option>
-              <option value="Clotted sample">Clotted sample (unacceptable type)</option>
-              <option value="Hemolyzed sample">Hemolyzed sample</option>
-            </select>
+            <label for="opName">Received By (Operator ID)</label>
+            <input 
+              type="text" 
+              id="opName" 
+              formControlName="receivedBy" 
+              placeholder="Operator name"
+              [class.invalid]="flagForm.get('receivedBy')?.touched && flagForm.get('receivedBy')?.invalid"
+            />
+            @if (flagForm.get('receivedBy')?.touched && flagForm.get('receivedBy')?.invalid) {
+              <span class="error-text">Required (between 2 and 100 characters).</span>
+            }
           </div>
 
+          <!-- Specimen Dropdown selection -->
           <div class="form-group">
-            <label for="customReason">Additional Details / Custom Reason</label>
+            <label for="specSelect">Select Specimen</label>
+            <select 
+              id="specSelect" 
+              formControlName="specimenId"
+              [class.invalid]="flagForm.get('specimenId')?.touched && flagForm.get('specimenId')?.invalid"
+            >
+              <option value="">-- Choose Specimen --</option>
+              @for (spec of manifest()?.specimens; track spec.id) {
+                <option [value]="spec.id">{{ spec.code }} - {{ spec.patient }} ({{ spec.status }})</option>
+              }
+            </select>
+            @if (flagForm.get('specimenId')?.touched && flagForm.get('specimenId')?.invalid) {
+              <span class="error-text">Please select a specimen.</span>
+            }
+          </div>
+
+          <!-- Discrepancy Notes -->
+          <div class="form-group">
+            <label for="flagNotes">Discrepancy Reason / Notes</label>
             <textarea 
-              id="customReason" 
+              id="flagNotes" 
+              formControlName="notes" 
               rows="3" 
-              [(ngModel)]="rejectionReason" 
-              placeholder="Provide specific details about why the container is being rejected..."
+              placeholder="Provide a detailed note about the discrepancy (e.g. Specimen is missing from transport bag, container lid was loose...)"
+              [class.invalid]="flagForm.get('notes')?.touched && flagForm.get('notes')?.invalid"
             ></textarea>
+            @if (flagForm.get('notes')?.touched && flagForm.get('notes')?.invalid) {
+              <span class="error-text">Reason details are required (5 to 500 characters).</span>
+            }
           </div>
         </div>
+
         <div class="modal-footer">
-          <button class="btn btn-secondary" (click)="closeRejectionModal()">Cancel</button>
+          <button type="button" class="btn btn-secondary" (click)="closeFlagDialog()">Cancel</button>
           <button 
+            type="submit" 
             class="btn btn-danger" 
-            [disabled]="!rejectionReason() || isRejecting()"
-            (click)="submitRejection()"
+            [disabled]="flagForm.invalid || isSubmitting()"
           >
-            @if (isRejecting()) {
-              Rejecting...
+            @if (isSubmitting()) {
+              Flagging...
             } @else {
-              Confirm Rejection
+              Raise Discrepancy
             }
           </button>
         </div>
-      </div>
+      </form>
     </div>
-  }
-</div>
+  </div>
+}
