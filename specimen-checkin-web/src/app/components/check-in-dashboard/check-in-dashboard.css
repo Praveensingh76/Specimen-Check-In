@@ -148,4 +148,12 @@
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
+
+  .left-panel.mobile-hide-list {
+    display: none;
+  }
+
+  .right-panel.mobile-hide-detail {
+    display: none;
+  }
 }

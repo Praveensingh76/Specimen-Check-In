@@ -72,7 +72,7 @@
   @if (!isLoading() && !errorMessage()) {
     <div class="dashboard-grid">
       <!-- Left Panel: Recent Manifests List (1/3 width) -->
-      <aside class="glass-card left-panel">
+      <aside class="glass-card left-panel" [class.mobile-hide-list]="mobileShowDetail()">
         @if (manifests().length === 0) {
           <div class="empty-list-state">
             <span class="empty-icon">📦</span>
@@ -89,12 +89,13 @@
       </aside>
 
       <!-- Right Panel: Selected Manifest Detail & Check-In Action Area (2/3 width) -->
-      <main class="glass-card right-panel">
+      <main class="glass-card right-panel" [class.mobile-hide-detail]="!mobileShowDetail()">
         <app-manifest-detail
           [manifest]="manifestService.selectedManifest()"
           [operatorName]="operatorName()"
           (successOccurred)="onSuccessNotification($event)"
           (errorOccurred)="onErrorNotification($event)"
+          (backToList)="onBackToList()"
         ></app-manifest-detail>
       </main>
     </div>

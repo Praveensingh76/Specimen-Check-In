@@ -23,6 +23,11 @@ export class ManifestDetail {
   // Events
   readonly errorOccurred = output<string>();
   readonly successOccurred = output<string>();
+  readonly backToList = output<void>();
+
+  onBack(): void {
+    this.backToList.emit();
+  }
 
   // State
   readonly isFlagDialogOpen = signal<boolean>(false);

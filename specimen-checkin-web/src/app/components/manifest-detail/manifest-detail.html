@@ -1,5 +1,10 @@
 @if (manifest(); as m) {
   <div class="manifest-detail-container">
+    <!-- Back Button for Mobile Layouts -->
+    <button type="button" class="btn btn-secondary mobile-back-btn" (click)="onBack()">
+      ← Back to Shipments
+    </button>
+
     <!-- Header Area -->
     <div class="detail-header">
       <div class="header-main">

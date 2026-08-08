@@ -27,6 +27,9 @@ export class CheckInDashboard implements OnInit {
   readonly errorNotification = signal<string>('');
   readonly successNotification = signal<string>('');
 
+  // Mobile responsive view control
+  readonly mobileShowDetail = signal<boolean>(false);
+
   // Operator ID
   readonly operatorName = signal<string>('Lab Tech Alice');
 
@@ -50,6 +53,7 @@ export class CheckInDashboard implements OnInit {
     if (select.value) {
       this.labService.setActiveLab(select.value);
       this.manifestService.selectManifest(''); // Clear selection
+      this.mobileShowDetail.set(false);
       this.fetchManifests();
     }
   }
@@ -90,6 +94,13 @@ export class CheckInDashboard implements OnInit {
   onSelectManifest(id: string): void {
     this.clearNotifications();
     this.manifestService.selectManifest(id);
+    if (id) {
+      this.mobileShowDetail.set(true);
+    }
+  }
+
+  onBackToList(): void {
+    this.mobileShowDetail.set(false);
   }
 
   onErrorNotification(msg: string): void {
